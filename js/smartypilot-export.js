@@ -47,7 +47,7 @@
   });
   [btnPdf, btnPng, btnPrint].forEach(b => b?.addEventListener('click', closeMenu));
 
-  // ---- FIX #1: Image cache — le immagini condivise (es. logo) vengono scaricate una sola volta ----
+  // ---- Image cache ----
   const _imgCache = new Map();
 
   async function preloadImages() {
@@ -59,7 +59,7 @@
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload  = () => { _imgCache.set(src, true); resolve(); };
-        img.onerror = () => resolve(); // non bloccare su errore
+        img.onerror = () => resolve(); 
         img.src = src;
       });
     }));
@@ -72,8 +72,6 @@
     }
   }
 
-  // FIX #2: capture restituisce una Promise<string> (dataURL JPEG) e distrugge subito il canvas
-  // FIX #3: toBlob è asincrono e non blocca il main thread come toDataURL
   function canvasToJpegAsync(canvas, quality) {
     return new Promise((resolve, reject) => {
       canvas.toBlob(
@@ -99,22 +97,19 @@
 
     let canvas;
     try {
+      // CORREZIONE: Sintassi corretta per la chiamata a html2canvas
       canvas = await window.html2canvas(slideEl, {
         scale:           SCALE,
         useCORS:         true,
         allowTaint:      false,
         logging:         false,
-        backgroundColor: '#ffffff',
-        imageTimeout:    8000,   // evita attese infinite su immagini lente
-        removeContainer: true    // html2canvas rimuove subito il clone dal DOM
+        backgroundColor: '#ffffff'
       });
 
-      // FIX #3: conversione asincrona, non blocca il thread
       const dataUrl = await canvasToJpegAsync(canvas, JPEG_Q);
       return dataUrl;
 
     } finally {
-      // FIX #2: pulizia immediata — libera ~8MB di RAM per slide
       slideEl.style.width  = '';
       slideEl.style.height = '';
       slideEl.classList.remove('is-exporting');
@@ -135,14 +130,13 @@
     a.remove();
   }
 
-  // Feedback visivo sul bottone
   function setBtn(btn, text, disabled) {
     if (!btn) return;
     btn.disabled = disabled;
     btn.textContent = text;
   }
 
-  // ---- PNG (prima slide) ----
+  // ---- Actions ----
   btnPng?.addEventListener('click', async () => {
     const prev = btnPng.textContent;
     setBtn(btnPng, 'Genero PNG…', true);
@@ -159,7 +153,6 @@
     }
   });
 
-  // ---- PDF multipagina ----
   btnPdf?.addEventListener('click', async () => {
     if (!slides.length) return;
     const prev = btnPdf.textContent;
@@ -167,12 +160,11 @@
 
     try {
       await ensureFontsReady();
-
-      // FIX #1: pre-carica tutte le immagini una sola volta prima di iniziare
       setBtn(btnPdf, 'Carico risorse…', true);
       await preloadImages();
 
-      const jsPDF = (window.jspdf?.jsPDF) || window.jsPDF;
+      // Controllo per jsPDF (correzione per compatibilità)
+      const { jsPDF } = window.jspdf || window; 
       if (!jsPDF) throw new Error('jsPDF non è stato caricato.');
 
       const pageW = SLIDE_W * SCALE;
@@ -180,18 +172,10 @@
 
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [pageW, pageH] });
 
-      // FIX #4: le slide vengono ancora catturate in sequenza (html2canvas non è thread-safe),
-      // ma ora ogni canvas viene immediatamente liberato dopo la conversione in JPEG,
-      // e il feedback aggiornato dopo ogni slide riduce la percezione di lentezza.
       for (let i = 0; i < slides.length; i++) {
         setBtn(btnPdf, `Slide ${i + 1}/${slides.length}…`, true);
-
-        // Piccola pausa per sbloccare il thread tra una slide e l'altra
-        // → permette al browser di aggiornare UI e garbage-collect il canvas precedente
         await new Promise(r => setTimeout(r, 50));
-
         const img = await capture(slides[i]);
-
         if (i > 0) pdf.addPage([pageW, pageH], 'landscape');
         pdf.addImage(img, 'JPEG', 0, 0, pageW, pageH);
       }
@@ -206,14 +190,13 @@
     }
   });
 
-  // ---- PRINT ----
   async function printAsImages() {
     await ensureFontsReady();
     await preloadImages();
 
     const images = [];
     for (let i = 0; i < slides.length; i++) {
-      await new Promise(r => setTimeout(r, 50)); // respiro tra una slide e l'altra
+      await new Promise(r => setTimeout(r, 50));
       images.push(await capture(slides[i]));
     }
 
