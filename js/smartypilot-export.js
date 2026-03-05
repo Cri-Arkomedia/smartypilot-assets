@@ -2,9 +2,10 @@
   'use strict';
 
   // ---- Export settings ----
+  // SCALE ridotto a 1.5 per ottimizzare velocità e memoria senza perdere nitidezza
   const SLIDE_W = 1280;
   const SLIDE_H = 720;
-  const SCALE  = 2;   // 2 = buon compromesso; 3 = più nitido ma più pesante
+  const SCALE  = 1.5;   
 
   // ---- Elements ----
   const btnPdf = document.getElementById('btnPdf');
@@ -62,30 +63,31 @@
     }
   }
 
-async function capture(slideEl) {
-  if (!window.html2canvas) throw new Error("html2canvas non è stato caricato.");
+  async function capture(slideEl) {
+    if (!window.html2canvas) throw new Error("html2canvas non è stato caricato.");
 
-  const prevW = slideEl.style.width;
-  const prevH = slideEl.style.height;
+    const prevW = slideEl.style.width;
+    const prevH = slideEl.style.height;
 
-  slideEl.classList.add('is-exporting'); // niente radius in export
+    slideEl.classList.add('is-exporting'); // niente radius in export
 
-  slideEl.style.width  = SLIDE_W + 'px';
-  slideEl.style.height = SLIDE_H + 'px';
+    slideEl.style.width  = SLIDE_W + 'px';
+    slideEl.style.height = SLIDE_H + 'px';
 
-  const canvas = await window.html2canvas(slideEl, {
-    scale: SCALE,
-    useCORS: true,
-    backgroundColor: '#ffffff' // niente nero
-  });
+    const canvas = await window.html2canvas(slideEl, {
+      scale: SCALE,
+      useCORS: true,
+      logging: false, // <-- OTTIMIZZAZIONE 1: Spegne i log per sbloccare la velocità
+      backgroundColor: '#ffffff'
+    });
 
-  slideEl.style.width  = prevW;
-  slideEl.style.height = prevH;
+    slideEl.style.width  = prevW;
+    slideEl.style.height = prevH;
 
-  slideEl.classList.remove('is-exporting');
+    slideEl.classList.remove('is-exporting');
 
-  return canvas;
-}
+    return canvas;
+  }
 
   function downloadDataUrl(dataUrl, filename) {
     const a = document.createElement('a');
@@ -96,7 +98,7 @@ async function capture(slideEl) {
     a.remove();
   }
 
-  // ---- PNG ----
+  // ---- PNG (Export della prima slide) ----
   btnPng?.addEventListener('click', async () => {
     if (!slides.length) return;
     btnPng.disabled = true;
@@ -120,7 +122,7 @@ async function capture(slideEl) {
     if (!slides.length) return;
     btnPdf.disabled = true;
     const prev = btnPdf.textContent;
-    btnPdf.textContent = 'Genero PDF…';
+    btnPdf.textContent = 'Genero PDF (Attendere)…';
 
     try {
       await ensureFontsReady();
@@ -139,10 +141,11 @@ async function capture(slideEl) {
 
       for (let i = 0; i < slides.length; i++) {
         const canvas = await capture(slides[i]);
-        const img = canvas.toDataURL('image/png');
+        // OTTIMIZZAZIONE 2: Usare JPEG (al 95% di qualità) per il PDF invece del PNG evita il blocco della RAM
+        const img = canvas.toDataURL('image/jpeg', 0.95); 
 
         if (i > 0) pdf.addPage([pageW, pageH], 'landscape');
-        pdf.addImage(img, 'PNG', 0, 0, pageW, pageH);
+        pdf.addImage(img, 'JPEG', 0, 0, pageW, pageH);
       }
 
       pdf.save(`presentazione-16x9-${Date.now()}.pdf`);
@@ -162,7 +165,8 @@ async function capture(slideEl) {
     const images = [];
     for (let i = 0; i < slides.length; i++) {
       const canvas = await capture(slides[i]);
-      images.push(canvas.toDataURL('image/png'));
+      // OTTIMIZZAZIONE 3: Anche qui JPEG per non saturare la memoria in stampa
+      images.push(canvas.toDataURL('image/jpeg', 0.95)); 
     }
 
     const w = window.open('', '_blank');
